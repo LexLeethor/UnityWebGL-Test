@@ -1,11 +1,12 @@
 name: Build project & release
 
 on:
-  push:
-    tags:
-      - '*'          # Run on any tag
-    branches:
-      - master       # Run on master branch
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.2.3)"
+        required: true
+        type: string
 
 jobs:
   variables:
@@ -30,10 +31,7 @@ jobs:
       - name: Set tag
         id: set_tag
         run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          else
-            echo "VERSION=${{ steps.set_unity_version.outputs.VERSION }}-webgl2-master" >> $GITHUB_OUTPUT
+          echo "VERSION=${{ inputs.tag }}" >> $GITHUB_OUTPUT
 
       - name: Set build name
         id: set_build_name
@@ -49,7 +47,6 @@ jobs:
     name: Build Unity WebGL 🏗
     needs: [ variables ]
     runs-on: ubuntu-latest
-    if: ${{ github.ref_type == 'tag' || github.ref == 'refs/heads/master' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,7 +99,6 @@ jobs:
     name: Create GitHub Release 🐙
     needs: [ variables, buildProject ]
     runs-on: ubuntu-latest
-    if: ${{ github.ref_type == 'tag' }}
     steps:
       - name: Download build artifact
         uses: actions/download-artifact@v4
@@ -113,6 +109,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.variables.outputs.TAG }}
+          name: ${{ needs.variables.outputs.TAG }}
+          target_commitish: ${{ github.sha }}
           files: build/**/*
           body: |
             ## Changes
