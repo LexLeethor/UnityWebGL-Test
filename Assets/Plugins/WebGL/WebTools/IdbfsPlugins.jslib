@@ -35,7 +35,7 @@ var IdbfsPlugins =
     // Returns a warning string if the current origin is known to be hostile to
     // IndexedDB persistence, or null if everything looks fine.
     $idbfs_originWarning: function() {
-        var origin = _idbfs_detectOrigin();
+        var origin = idbfs_detectOrigin();
         if (origin === 'blob-null' || origin === 'blob-file') {
             return 'WARN_BLOB_ORIGIN: Blob URLs have an opaque/null origin. ' +
                    'IndexedDB is blocked in most browsers (Chrome, Firefox, Safari). ' +
@@ -66,8 +66,8 @@ var IdbfsPlugins =
         var callbackObject = toString(callbackObjectPtr);
         var callbackMethod = toString(callbackMethodPtr);
 
-        var origin = _idbfs_detectOrigin();
-        var warning = _idbfs_originWarning();
+        var origin = idbfs_detectOrigin();
+        var warning = idbfs_originWarning();
         var result = 'OriginInfo:' + origin + (warning ? '|' + warning : '|OK');
 
         console.log('[IDBFS] Origin check:', result);
@@ -148,7 +148,7 @@ var IdbfsPlugins =
         }
 
         // Warn about hostile origins (does not abort — let it try and report)
-        var originWarn = _idbfs_originWarning();
+        var originWarn = idbfs_originWarning();
         if (originWarn) {
             console.warn('[IDBFS]', originWarn);
         }
