@@ -106,18 +106,18 @@ jobs:
           name: ${{ needs.variables.outputs.BUILD_NAME }}
           path: build
 
+      - name: Package build as zip
+        run: |
+          cd build
+          zip -r "${{ needs.variables.outputs.BUILD_NAME }}.zip" .
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.variables.outputs.TAG }}
           name: ${{ needs.variables.outputs.TAG }}
           target_commitish: ${{ github.sha }}
-          files: build/**/*
+          files: build/${{ needs.variables.outputs.BUILD_NAME }}.zip
           body: |
-            ## Changes
-            *
-            [${{ needs.variables.outputs.UNITY_VERSION }}-webgl2](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-webgl2/)
-            [${{ needs.variables.outputs.UNITY_VERSION }}-webgl1](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-webgl1/)
-            [${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl2 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl2/)
-            [${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl1 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl1/)
-            [${{ needs.variables.outputs.UNITY_VERSION }}-minsize-webgl1 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-minsize-webgl1/)
+            ## Build
+            Packaged WebGL build for this tag.
