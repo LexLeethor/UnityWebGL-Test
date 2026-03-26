@@ -15,6 +15,15 @@ var IdbfsPlugins =
     // Helpers (injected into every function via $idbfs_state dependency)
     // -------------------------------------------------------------------------
 
+    // Check whether IDBFS is already mounted at a given path.
+    $idbfs_isMountedAt: function(path) {
+        if (typeof FS === 'undefined' || !FS || !FS.mounts) return false;
+        for (var i = 0; i < FS.mounts.length; i++) {
+            if (FS.mounts[i].mountpoint === path) return true;
+        }
+        return false;
+    },
+
     // Detect the effective storage origin and return a human-readable tag.
     // Returns one of: 'http', 'https', 'file', 'blob-null', 'blob-file', 'unknown'
     $idbfs_detectOrigin: function() {
@@ -139,7 +148,7 @@ var IdbfsPlugins =
         var callbackObject = toString(callbackObjectPtr);
         var callbackMethod = toString(callbackMethodPtr);
 
-        // Guard: double-mount
+        // Guard: double-mount (our own state)
         if (idbfs_state.mounted) {
             var msg = 'MountAlreadyMounted';
             console.warn('[IDBFS] MountAndSync called but IDBFS is already mounted at', path);
@@ -151,6 +160,26 @@ var IdbfsPlugins =
         var originWarn = idbfs_originWarning();
         if (originWarn) {
             console.warn('[IDBFS]', originWarn);
+        }
+
+        // If Unity (or another lib) already mounted IDBFS at this path,
+        // skip FS.mount and just populate from IndexedDB.
+        if (idbfs_isMountedAt(path)) {
+            console.warn('[IDBFS] IDBFS already mounted externally at', path);
+            // true = populate (IndexedDB -> memory)
+            FS.syncfs(true, function(err) {
+                if (err) {
+                    var msg = 'MountFailed:syncfs populate failed: ' + err;
+                    console.error('[IDBFS]', msg);
+                    if (callbackObject && callbackMethod) SendMessage(callbackObject, callbackMethod, msg);
+                } else {
+                    idbfs_state.mounted = true;
+                    var result = 'MountSuccess' + (originWarn ? '|' + originWarn : '|WARN_ALREADY_MOUNTED');
+                    console.log('[IDBFS] Populated from IndexedDB (pre-mounted):', path);
+                    if (callbackObject && callbackMethod) SendMessage(callbackObject, callbackMethod, result);
+                }
+            });
+            return;
         }
 
         try { FS.mkdir(path); } catch(e) {}
@@ -297,7 +326,7 @@ var IdbfsPlugins =
 };
 
 // Declare shared state and helpers as dependencies so Emscripten includes them.
-IdbfsPlugins['_Idbfs_MountAndSync__deps']           = ['$idbfs_state', '$idbfs_detectOrigin', '$idbfs_originWarning'];
+IdbfsPlugins['_Idbfs_MountAndSync__deps']           = ['$idbfs_state', '$idbfs_detectOrigin', '$idbfs_originWarning', '$idbfs_isMountedAt'];
 IdbfsPlugins['_Idbfs_SyncToIndexedDb__deps']        = ['$idbfs_state'];
 IdbfsPlugins['_Idbfs_GetOriginInfo__deps']           = ['$idbfs_detectOrigin', '$idbfs_originWarning'];
 IdbfsPlugins['_Idbfs_CheckIdbAvailable__deps']       = [];
