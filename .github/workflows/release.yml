@@ -1,16 +1,15 @@
-# Build and upload the project by pushing tags
 name: Build project & release
 
 on:
   push:
     tags:
-      - '*'
+      - '*'          # Run on any tag
     branches:
-      - master
+      - master       # Run on master branch
 
 jobs:
   variables:
-    name: Define variables 🔗
+    name: Define variables
     runs-on: ubuntu-latest
     outputs:
       UNITY_VERSION: ${{ steps.set_unity_version.outputs.VERSION }}
@@ -22,22 +21,21 @@ jobs:
           sparse-checkout: |
             ProjectSettings/ProjectVersion.txt
 
-      - name: Set unity version
+      - name: Set Unity version
         id: set_unity_version
         run: |
-          UNITY_VERSION=$(sed -n 's/^\m_EditorVersion: //p'< ./ProjectSettings/ProjectVersion.txt)
+          UNITY_VERSION=$(sed -n 's/^m_EditorVersion: //p' ./ProjectSettings/ProjectVersion.txt)
           echo "VERSION=$UNITY_VERSION" >> $GITHUB_OUTPUT
 
       - name: Set tag
         id: set_tag
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            echo "VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${{ steps.set_unity_version.outputs.VERSION }}-webgl2-master" >> $GITHUB_OUTPUT
-          fi
 
-      - name: Set target name
+      - name: Set build name
         id: set_build_name
         run: echo "VERSION=WebGL-${{ steps.set_tag.outputs.VERSION }}" >> $GITHUB_OUTPUT
 
@@ -47,50 +45,24 @@ jobs:
           echo "TAG -> ${{ steps.set_tag.outputs.VERSION }}"
           echo "BUILD_NAME -> ${{ steps.set_build_name.outputs.VERSION }}"
 
-  tagVersionMatchTest:
-    needs: [ variables ]
-    name: Check tag version match ☑
-    runs-on: ubuntu-latest
-    steps:
-
-      - name: Log tag and version
-        run: echo "Github tag '${{ needs.variables.outputs.TAG }}' has to start with unity version '${{ needs.variables.outputs.UNITY_VERSION }}'"
-
-      - name: Version match ✔
-        if: startsWith(${{ needs.variables.outputs.TAG }}, {{ needs.variables.outputs.UNITY_VERSION }}
-        run: echo "Versions are matching 🥳"
-
-      - name: Version missmatch ❌
-        if: ${{ !startsWith(needs.variables.outputs.TAG, needs.variables.outputs.UNITY_VERSION) }}
-        uses: actions/github-script@v4
-        with:
-          script: |
-              core.setFailed('Unity version does not match tag version')
-
   buildProject:
-    name: Create Unity WebGL Build 🏗
-    # Build if it's a master push or if the tag is not just the unity version
-    if: ${{ github.ref == 'refs/heads/master' || needs.variables.outputs.TAG != needs.variables.outputs.UNITY_VERSION }}
+    name: Build Unity WebGL 🏗
     needs: [ variables ]
     runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' || github.ref == 'refs/heads/master' }}
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
 
-      # Avoid running into space issues for github runners - Docker images can take up quite some space
       - name: Free Disk Space
         run: |
           echo "Disk space before cleanup:"
           df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           echo "Disk space after cleanup:"
           df -h
 
-      # Unity 2020 cache is not compatible with older versions
       - name: Unity Library Cache 2020 or higher
         if: ${{ !startsWith(needs.variables.outputs.UNITY_VERSION, '201') }}
         uses: actions/cache@v4
@@ -120,69 +92,33 @@ jobs:
           versioning: None
           buildName: ${{ needs.variables.outputs.BUILD_NAME }}
 
-      - name: Check Disk Space After Build
-        run: |
-          echo "Disk space after build:"
-          df -h
-          AVAILABLE=$(df / | tail -1 | awk '{print $4}')
-          AVAILABLE_GB=$(echo $AVAILABLE | sed 's/G//')
-          echo "Available space: ${AVAILABLE_GB}GB"
-          if (( $(echo "$AVAILABLE_GB < 1" | bc -l) )); then
-            echo "::warning::Low disk space! Less than 1GB remaining."
-          fi
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ needs.variables.outputs.BUILD_NAME }}
           path: build/WebGL
 
   createRelease:
-    name: Create Github release 🐙
-    # only run for the pure tag without build parameters
-    if: ${{ github.ref_type == 'tag' && needs.variables.outputs.TAG == needs.variables.outputs.UNITY_VERSION }}
-    needs: [ variables ]
+    name: Create GitHub Release 🐙
+    needs: [ variables, buildProject ]
     runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' }}
     steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.variables.outputs.BUILD_NAME }}
+          path: build
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          files: build/**/*
           body: |
             ## Changes
             *
-
             [${{ needs.variables.outputs.UNITY_VERSION }}-webgl2](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-webgl2/)
             [${{ needs.variables.outputs.UNITY_VERSION }}-webgl1](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-webgl1/)
             [${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl2 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl2/)
             [${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl1 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-urp-webgl1/)
             [${{ needs.variables.outputs.UNITY_VERSION }}-minsize-webgl1 Demo](https://deml.io/experiments/unity-webgl/${{ needs.variables.outputs.UNITY_VERSION }}-minsize-webgl1/)
-          draft: true
-
-
-  deployOnServer:
-    name: Deploy on server 🚀
-    needs: [ variables, buildProject ]
-    # Guarded by username, you will need to remove or replace the line for your fork
-    if: ${{ github.repository_owner == 'JohannesDeml' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.variables.outputs.BUILD_NAME }}
-          path: build
-
-      - name: Display structure of root files
-        run: ls -R
-        working-directory: build/${{ needs.variables.outputs.BUILD_NAME }}
-
-      - name: Deploy ⤴
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 21
-          protocol: ftps
-          local-dir: ./build/${{ needs.variables.outputs.BUILD_NAME }}/
-          server-dir: ./${{ needs.variables.outputs.TAG }}/
-          # Make sure old files are deleted (e.g. created with name files as hashes)
-          dangerous-clean-slate: true
